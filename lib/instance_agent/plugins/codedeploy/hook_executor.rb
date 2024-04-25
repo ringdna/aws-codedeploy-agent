@@ -159,6 +159,7 @@ module InstanceAgent
           script_command = InstanceAgent::Platform.util.prepare_script_command(script, script_absolute_path(script))
           log_script("Script - " + script.location + "\n", script_log_file)
           exit_status = 1
+          diagnostics = nil
           signal = nil
 
           if !InstanceAgent::Platform.util.supports_process_groups?
@@ -176,6 +177,7 @@ module InstanceAgent
             stderr_thread = Thread.new{stderr.each_line { |line| log_script("[stderr]" + line.to_s, script_log_file)}}
             thread_joiner = InstanceAgent::ThreadJoiner.new(script.timeout)
             thread_joiner.joinOrFail(wait_thr) do
+              log :info, "Script at specified location: #{script.location} timed out"
               Process.kill(signal, wait_thr.pid)
               raise Timeout::Error
             end
@@ -189,9 +191,13 @@ module InstanceAgent
               log :error, script_error
               raise ScriptError.new(ScriptError::OUTPUTS_LEFT_OPEN_CODE, script.location, @script_log), script_error
             end
+
             exit_status = wait_thr.value.exitstatus
+            diagnostics = process_status_diagnostics(wait_thr.value)
           end
-          if(exit_status != 0)
+
+          if (exit_status != 0)
+            log :debug, "Script failed. Diagnostics=#{diagnostics.to_s}"
             script_error = "#{script_error_prefix(script.location, script.runas)} failed with exit code #{exit_status.to_s}"
             raise ScriptError.new(ScriptError::SCRIPT_FAILED_CODE, script.location, @script_log), script_error
           end
@@ -210,7 +216,7 @@ module InstanceAgent
         private
         def create_script_log_file_if_needed
           script_log_file_location = File.join(@current_deployment_root_dir, ScriptLog::SCRIPT_LOG_FILE_RELATIVE_LOCATION)
-          if(!File.exists?(script_log_file_location))
+          if(!File.exist?(script_log_file_location))
             unless File.directory?(File.dirname(script_log_file_location))
               FileUtils.mkdir_p(File.dirname(script_log_file_location))
             end
@@ -232,7 +238,7 @@ module InstanceAgent
         def parse_app_spec
           app_spec_location = File.join(@deployment_archive_dir, @app_spec_path)
           log(:debug, "Checking for app spec in #{app_spec_location}")
-          unless File.exists?(app_spec_location)
+          unless File.exist?(app_spec_location)
             raise <<-MESSAGE.gsub(/^[\s\t]*/, '').gsub(/\s*\n/, ' ').strip
                 The CodeDeploy agent did not find an AppSpec file within the unpacked revision directory at revision-relative path "#{@app_spec_path}".
                 The revision was unpacked to directory "#{@deployment_archive_dir}", and the AppSpec file was expected but not found at path
@@ -249,7 +255,7 @@ module InstanceAgent
           hook_deployment_mapping = mapping_between_hooks_and_deployments
           if(select_correct_mapping_for_hooks == LAST_SUCCESSFUL_DEPLOYMENT && !File.exist?(File.join(@deployment_root_dir, 'deployment-archive')))
             @deployment_root_dir = last_successful_deployment_root_dir
-          elsif(select_correct_mapping_for_hooks == MOST_RECENT_DEPLOYMENT && !File.exists?(File.join(@deployment_root_dir, 'deployment-archive')))
+          elsif(select_correct_mapping_for_hooks == MOST_RECENT_DEPLOYMENT && !File.exist?(File.join(@deployment_root_dir, 'deployment-archive')))
             @deployment_root_dir = most_recent_deployment_dir
           end
         end
@@ -300,6 +306,26 @@ module InstanceAgent
             InstanceAgent::DeploymentLog.instance.log("[#{@deployment_id}]#{message.strip}") if InstanceAgent::Config.config[:enable_deployments_log]
             script_log_file.flush
           end
+        end
+
+        private
+        # @param status [Process::Status]
+        #
+        # @return [Hash]
+        def process_status_diagnostics(status)
+          {
+            coredump?: status.coredump?,
+            exited: status.exited?,
+            exitstatus: status.exitstatus,
+            inspect: status.inspect,
+            pid: status.pid,
+            signaled?: status.signaled?,
+            stopped?: status.stopped?,
+            stopsig: status.stopsig,
+            success?: status.success?,
+            termsig: status.termsig,
+            to_i: status.to_i,
+          }
         end
       end
     end

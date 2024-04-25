@@ -39,8 +39,8 @@ class HookExecutorTest < InstanceAgentTestCase
       logger = mock
       logger.stubs(:log)
       InstanceAgent::DeploymentLog.stubs(:instance).returns(logger)
-      File.stubs(:exists?).returns(false)
-      File.stubs(:exists?).with(){|value| value.is_a?(String) && value.end_with?("/app_spec")}.returns(true)
+      File.stubs(:exist?).returns(false)
+      File.stubs(:exist?).with(){|value| value.is_a?(String) && value.end_with?("/app_spec")}.returns(true)
     end
 
     context "when creating a hook command" do
@@ -90,7 +90,7 @@ class HookExecutorTest < InstanceAgentTestCase
         end
 
         should "fail if app spec not found" do 
-            File.stubs(:exists?).with(){|value| value.is_a?(String) && value.end_with?("/app_spec")}.returns(false)
+            File.stubs(:exist?).with(){|value| value.is_a?(String) && value.end_with?("/app_spec")}.returns(false)
             assert_raised_with_message("The CodeDeploy agent did not find an AppSpec file within the unpacked revision directory at revision-relative path \"app_spec\". The revision was unpacked to directory \"deployment/root/dir/deployment-archive\", and the AppSpec file was expected but not found at path \"deployment/root/dir/deployment-archive/app_spec\". Consult the AWS CodeDeploy Appspec documentation for more information at http://docs.aws.amazon.com/codedeploy/latest/userguide/reference-appspec-file.html", RuntimeError)do
               @hook_executor =  create_hook_executor
             end
@@ -262,7 +262,7 @@ class HookExecutorTest < InstanceAgentTestCase
 
               should "call popen with the environment variables" do
                 Open3.stubs(:popen3).with(@child_env, @script_location, :pgroup => true).yields([@mock_pipe,@mock_pipe,@mock_pipe,@wait_thr])
-                @value.stubs(:exitstatus).returns(0)
+                setup_successful_status(@value)
                 @hook_executor.execute()
               end
             end
@@ -374,7 +374,7 @@ class HookExecutorTest < InstanceAgentTestCase
 
               context "scripts fail" do
                 setup do
-                  @value.stubs(:exitstatus).returns(1)
+                  setup_failure_status(@value)
                 end
 
                 should "raise an exception" do
@@ -386,7 +386,7 @@ class HookExecutorTest < InstanceAgentTestCase
 
               context "scripts pass" do
                 setup do
-                  @value.stubs(:exitstatus).returns(0)
+                  setup_successful_status(@value)
                 end
 
                 should "execute script with runas" do
@@ -406,7 +406,7 @@ class HookExecutorTest < InstanceAgentTestCase
 
               context "Scripts fail" do
                 setup do
-                  @value.stubs(:exitstatus).returns(1)
+                  setup_failure_status(@value)
                 end
 
                 should "raise an exception" do
@@ -418,7 +418,7 @@ class HookExecutorTest < InstanceAgentTestCase
 
               context "Scripts pass" do
                 setup do
-                  @value.stubs(:exitstatus).returns(0)
+                  setup_successful_status(@value)
                 end
 
                 should "execute script" do
@@ -439,7 +439,7 @@ class HookExecutorTest < InstanceAgentTestCase
 
               context "Scripts fail" do
                 setup do
-                  @value.stubs(:exitstatus).returns(1)
+                  setup_failure_status(@value)
                 end
 
                 should "raise an exception" do
@@ -451,7 +451,7 @@ class HookExecutorTest < InstanceAgentTestCase
 
               context "Scripts pass" do
                 setup do
-                  @value.stubs(:exitstatus).returns(0)
+                  setup_successful_status(@value)
                 end
 
                 should "execute script" do
@@ -512,5 +512,37 @@ class HookExecutorTest < InstanceAgentTestCase
         end
       end
     end
+  end
+
+  def setup_successful_status(value)
+    value.stubs(:exitstatus).returns(0)
+
+    # for diagnostic logging
+    value.stubs(:coredump?).returns(false)
+    value.stubs(:exited?).returns(true)
+    value.stubs(:inspect).returns("inspect result")
+    value.stubs(:pid).returns(4560)
+    value.stubs(:signaled?).returns(false)
+    value.stubs(:stopped?).returns(false)
+    value.stubs(:stopsig).returns(nil)
+    value.stubs(:success?).returns(false)
+    value.stubs(:termsig).returns(nil)
+    value.stubs(:to_i).returns(12)
+  end
+
+  def setup_failure_status(value)
+    value.stubs(:exitstatus).returns(1)
+
+    # for diagnostic logging
+    value.stubs(:coredump?).returns(false)
+    value.stubs(:exited?).returns(true)
+    value.stubs(:inspect).returns("inspect result")
+    value.stubs(:pid).returns(4560)
+    value.stubs(:signaled?).returns(false)
+    value.stubs(:stopped?).returns(false)
+    value.stubs(:stopsig).returns(nil)
+    value.stubs(:success?).returns(false)
+    value.stubs(:termsig).returns(nil)
+    value.stubs(:to_i).returns(12)
   end
 end

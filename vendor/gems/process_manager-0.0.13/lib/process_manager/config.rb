@@ -17,10 +17,14 @@ module ProcessManager
     end
 
     def self.load_config
-      if File.exists?(config[:config_file]) && File.readable?(config[:config_file])
-        file_config = YAML.load(File.read(config[:config_file])).symbolize_keys
-        config.update(file_config)
-        config_loaded_callbacks.each{|c| c.call}
+      if File.readable?(config[:config_file])
+        begin
+          file_config = YAML.load(File.read(config[:config_file])).symbolize_keys
+          config.update(file_config)
+          config_loaded_callbacks.each{|c| c.call}
+        rescue Exception => ex
+          raise "An error occurred loading the CodeDeploy agent config file at #{config[:config_file]}. Error message: #{ex}"
+        end
       else
         raise "The config file #{config[:config_file]} does not exist or is not readable"
       end
@@ -44,6 +48,7 @@ module ProcessManager
         :log_dir => '/tmp',
         :pid_dir => '/tmp',
         :verbose => false,
+        :disable_imds_v1 => false,
         :wait_after_throttle_error => 60, # wait time in seconds after a we got a throttling exception from SWF
         :wait_between_runs => 5, # wait time in seconds after a run so that we don't run into throttling exceptions
         :wait_after_connection_problem => 5, # wait time in seconds after a connection problem as we don't want to build a fork-bomb
@@ -76,8 +81,8 @@ module ProcessManager
     end
 
     def validate_log_and_pid_dir(errors)
-      FileUtils.mkdir_p(ProcessManager::Config.config[:log_dir]) unless File.exists?(ProcessManager::Config.config[:log_dir])
-      FileUtils.mkdir_p(ProcessManager::Config.config[:pid_dir]) unless File.exists?(ProcessManager::Config.config[:pid_dir])
+      FileUtils.mkdir_p(ProcessManager::Config.config[:log_dir]) unless File.directory?(ProcessManager::Config.config[:log_dir])
+      FileUtils.mkdir_p(ProcessManager::Config.config[:pid_dir]) unless File.directory?(ProcessManager::Config.config[:pid_dir])
       errors << "Please make sure the path of the log directory exists and is writable: #{config[:log_dir].inspect}" unless file_writable?(config[:log_dir]) && File.directory?(config[:log_dir])
       errors << "Please make sure the path of the PID directory exists and is writable: #{config[:pid_dir].inspect}" unless file_writable?(config[:pid_dir]) && File.directory?(config[:pid_dir])
       errors
@@ -101,7 +106,7 @@ module ProcessManager
 
     def file_writable?(path)
       return false unless path.present?
-      if File.exists?(path)
+      if File.file?(path) || File.directory?(path)
         File.writable?(path)
       else
         File.writable?(File.dirname(path))
